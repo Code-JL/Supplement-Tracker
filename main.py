@@ -21,96 +21,103 @@ class ModernTheme:
     def update_colors(self):
         if self.is_dark:
             self.colors = {
-                'primary': '#2196F3',  # Material Blue
-                'secondary': '#FFC107',  # Material Amber
+                'primary': '#2196F3',    # Material Blue
+                'secondary': '#FFC107',   # Material Amber
                 'background': '#1E1E1E',  # Dark background
-                'surface': '#2D2D2D',    # Dark surface
-                'text': '#FFFFFF',       # White text
+                'surface': '#2D2D2D',     # Dark surface
+                'text': '#FFFFFF',        # White text
                 'text_secondary': '#AAAAAA',  # Light gray text
-                'error': '#F44336',      # Red
-                'success': '#4CAF50',    # Green
-                'hover': '#3D3D3D',      # Slightly lighter than surface
-                'selected': '#404040'    # Selected item background
+                'hover': '#3D3D3D',       # Slightly lighter than surface
             }
         else:
             self.colors = {
-                'primary': '#2196F3',    # Material Blue
-                'secondary': '#FFC107',  # Material Amber
-                'background': '#FFFFFF', # White background
-                'surface': '#F5F5F5',   # Light surface
-                'text': '#212121',      # Dark text
+                'primary': '#2196F3',     # Material Blue
+                'secondary': '#FFC107',    # Material Amber
+                'background': '#FFFFFF',   # White background
+                'surface': '#F5F5F5',     # Light surface
+                'text': '#212121',        # Dark text
                 'text_secondary': '#757575',  # Gray text
-                'error': '#F44336',     # Red
-                'success': '#4CAF50',   # Green
-                'hover': '#E0E0E0',     # Light gray hover
-                'selected': '#E8E8E8'   # Selected item background
+                'hover': '#E0E0E0',       # Light gray hover
             }
-
-    def toggle_theme(self):
-        self.is_dark = not self.is_dark
-        self.update_colors()
 
     def apply(self, root):
         style = ttk.Style()
+        style.theme_use('default')
         
-        # Configure basic styles
+        # Configure common colors and fonts
         style.configure('.',
-            font=self.fonts['body'],
             background=self.colors['background'],
-            foreground=self.colors['text']
+            foreground=self.colors['text'],
+            fieldbackground=self.colors['surface'],
+            font=self.fonts['body']
         )
         
-        # Modern Button
+        # Configure specific widget styles
         style.configure('TButton',
-            padding=(10, 5),
-            font=self.fonts['body'],
+            padding=5,
+            relief='flat',
             background=self.colors['surface'],
             foreground=self.colors['text']
         )
         
         style.map('TButton',
-            background=[('active', self.colors['hover'])],
-            foreground=[('active', self.colors['text'])]
+            relief=[('pressed', 'flat')],
+            background=[
+                ('pressed', self.colors['primary']),
+                ('active', self.colors['hover']),
+                ('!active', self.colors['surface'])
+            ],
+            foreground=[('pressed', '#FFFFFF')]
         )
         
-        # Theme toggle button style
+        # Theme toggle button
         style.configure('Toggle.TButton',
-            padding=(10, 5),
-            font=self.fonts['body']
+            padding=5,
+            relief='flat',
+            background=self.colors['surface']
+        )
+        
+        style.map('Toggle.TButton',
+            relief=[('pressed', 'flat')],
+            background=[
+                ('pressed', self.colors['secondary']),
+                ('active', self.colors['hover'])
+            ]
         )
         
         # Entry fields
         style.configure('TEntry',
             padding=5,
+            relief='flat',
             fieldbackground=self.colors['surface'],
-            foreground=self.colors['text'],
-            insertcolor=self.colors['text']  # Cursor color
+            selectbackground=self.colors['primary'],
+            selectforeground=self.colors['text']
         )
         
-        # Frame styling
-        style.configure('TFrame',
-            background=self.colors['background']
+        style.map('TEntry',
+            relief=[('focus', 'flat')],
+            bordercolor=[('focus', self.colors['primary'])]
         )
         
-        # Label styling
-        style.configure('TLabel',
-            font=self.fonts['body'],
-            background=self.colors['background'],
-            foreground=self.colors['text']
-        )
+        # Frame and Label
+        style.configure('TFrame', background=self.colors['background'])
+        style.configure('TLabel', background=self.colors['background'])
         
-        # Treeview styling
+        # Treeview
         style.configure('Treeview',
             background=self.colors['surface'],
             foreground=self.colors['text'],
             fieldbackground=self.colors['surface'],
-            font=self.fonts['body']
+            rowheight=25,
+            borderwidth=0
         )
         
         style.configure('Treeview.Heading',
-            font=self.fonts['heading'],
             background=self.colors['surface'],
-            foreground=self.colors['text']
+            foreground=self.colors['text'],
+            relief='flat',
+            borderwidth=0,
+            padding=5
         )
         
         style.map('Treeview',
@@ -118,31 +125,85 @@ class ModernTheme:
             foreground=[('selected', '#FFFFFF')]
         )
         
-        # Scrollbar styling
-        style.configure('TScrollbar',
-            background=self.colors['surface'],
-            troughcolor=self.colors['background'],
-            borderwidth=0,
-            arrowcolor=self.colors['text']
+        style.map('Treeview.Heading',
+            relief=[('active', 'flat')],
+            background=[('active', self.colors['hover'])]
         )
         
-        # Card style for calculator results
+        # Scrollbar
+        for orient in ['Vertical', 'Horizontal']:
+            style.configure(f'{orient}.TScrollbar',
+                background=self.colors['surface'],
+                troughcolor=self.colors['background'],
+                relief='flat',
+                borderwidth=0,
+                arrowsize=0
+            )
+            style.map(f'{orient}.TScrollbar',
+                relief=[('pressed', 'flat')],
+                background=[
+                    ('pressed', self.colors['primary']),
+                    ('active', self.colors['hover'])
+                ]
+            )
+        
+        # Card style for calculator
         style.configure('Card.TFrame',
             background=self.colors['surface'],
+            relief='flat',
+            borderwidth=1,
             padding=10
         )
         
-        # Remove borders
-        style.layout('TEntry', [
-            ('Entry.padding', {'sticky': 'nswe', 'children': [
-                ('Entry.textarea', {'sticky': 'nswe'})
-            ]})
-        ])
-        
         # Configure root window
-        root.configure(bg=self.colors['background'])
+        if isinstance(root, (tk.Tk, tk.Toplevel)):
+            root.configure(bg=self.colors['background'])
+            
+        # Apply theme to all widgets
+        self._apply_to_widget(root)
         
         return style
+    
+    def _apply_to_widget(self, widget):
+        """Recursively apply theme to widget and its children"""
+        if isinstance(widget, ttk.Widget):
+            # TTK widgets use style system
+            widget_class = widget.winfo_class()
+            if widget_class == 'TButton' and 'Toggle' in str(widget.cget('style')):
+                widget.configure(style='Toggle.TButton')
+            elif widget_class in ['TFrame', 'TLabelframe']:
+                # Skip style application for frames
+                pass
+            elif widget_class.startswith('T'):
+                # For other ttk widgets, use their existing class name
+                widget.configure(style=widget_class)
+        elif isinstance(widget, tk.Widget):
+            # Handle non-TTK widgets
+            if isinstance(widget, tk.Canvas):
+                widget.configure(
+                    bg=self.colors['surface'],
+                    highlightthickness=0,
+                    bd=0
+                )
+            elif isinstance(widget, tk.Text):
+                widget.configure(
+                    bg=self.colors['surface'],
+                    fg=self.colors['text'],
+                    insertbackground=self.colors['text'],
+                    selectbackground=self.colors['primary'],
+                    selectforeground=self.colors['text'],
+                    font=self.fonts['body']
+                )
+            elif isinstance(widget, (tk.Tk, tk.Toplevel)):
+                widget.configure(bg=self.colors['background'])
+        
+        # Apply to children
+        for child in widget.winfo_children():
+            self._apply_to_widget(child)
+
+    def toggle_theme(self):
+        self.is_dark = not self.is_dark
+        self.update_colors()
 
 class Supplement:
     def __init__(self, name: str, current_count: int, initial_count: int, 
@@ -198,11 +259,17 @@ class SupplementTracker:
     def __init__(self, initial_file=None):
         self.root = tk.Tk()
         self.root.title("Supplement Tracker")
-        self.root.geometry("1000x700")  # Larger default size
+        self.root.geometry("1000x700")
+        
+        # Remove default title bar
+        self.root.overrideredirect(True)
         
         # Apply modern theme
-        self.theme = ModernTheme(is_dark=True)  # Start with dark mode
+        self.theme = ModernTheme(is_dark=True)
         self.style = self.theme.apply(self.root)
+        
+        # Create custom title bar
+        self.create_title_bar()
         
         # Set up file association handling
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
@@ -211,11 +278,140 @@ class SupplementTracker:
         self.supplements: List[Supplement] = []
         self.setup_gui()
         
-        # Load initial file if provided
         if initial_file and os.path.exists(initial_file):
             self.load_supplements(initial_file)
         else:
             self.load_supplements()
+        
+        # Bind window dragging
+        self.title_bar.bind('<Button-1>', self.start_move)
+        self.title_bar.bind('<B1-Motion>', self.on_move)
+        
+        # Make window resizable
+        self.root.bind('<Button-3>', self.start_resize)
+        self.root.bind('<B3-Motion>', self.on_resize)
+
+    def create_title_bar(self):
+        # Create title bar frame
+        self.title_bar = ttk.Frame(self.root, style='TitleBar.TFrame')
+        self.title_bar.pack(fill='x', side='top')
+        
+        # Configure title bar style
+        self.style.configure('TitleBar.TFrame',
+            background=self.theme.colors['surface'],
+            relief='flat'
+        )
+        
+        # Window title
+        self.title_label = ttk.Label(
+            self.title_bar,
+            text="Supplement Tracker",
+            style='TitleBar.TLabel'
+        )
+        self.title_label.pack(side='left', padx=10, pady=5)
+        
+        # Configure title label style
+        self.style.configure('TitleBar.TLabel',
+            background=self.theme.colors['surface'],
+            foreground=self.theme.colors['text'],
+            font=self.theme.fonts['body']
+        )
+        
+        # Control buttons frame
+        control_frame = ttk.Frame(self.title_bar, style='TitleBar.TFrame')
+        control_frame.pack(side='right', padx=5)
+        
+        # Minimize button
+        min_btn = ttk.Button(
+            control_frame,
+            text="—",
+            width=3,
+            style='Titlebar.TButton',
+            command=self.minimize_window
+        )
+        min_btn.pack(side='left', padx=2)
+        
+        # Maximize button
+        max_btn = ttk.Button(
+            control_frame,
+            text="□",
+            width=3,
+            style='Titlebar.TButton',
+            command=self.toggle_maximize
+        )
+        max_btn.pack(side='left', padx=2)
+        
+        # Close button
+        close_btn = ttk.Button(
+            control_frame,
+            text="✕",
+            width=3,
+            style='Titlebar.TButton',
+            command=self.on_closing
+        )
+        close_btn.pack(side='left', padx=2)
+        
+        # Configure title bar button style
+        self.style.configure('Titlebar.TButton',
+            relief='flat',
+            background=self.theme.colors['surface'],
+            foreground=self.theme.colors['text']
+        )
+        
+        self.style.map('Titlebar.TButton',
+            background=[
+                ('active', self.theme.colors['hover']),
+                ('pressed', self.theme.colors['primary'])
+            ]
+        )
+        
+        # Store window state
+        self.is_maximized = False
+        self.maximize_restore_geometry = None
+
+    def start_move(self, event):
+        self.x = event.x
+        self.y = event.y
+
+    def on_move(self, event):
+        deltax = event.x - self.x
+        deltay = event.y - self.y
+        x = self.root.winfo_x() + deltax
+        y = self.root.winfo_y() + deltay
+        self.root.geometry(f"+{x}+{y}")
+
+    def start_resize(self, event):
+        self.start_x = event.x
+        self.start_y = event.y
+        self.start_width = self.root.winfo_width()
+        self.start_height = self.root.winfo_height()
+
+    def on_resize(self, event):
+        width = self.start_width + (event.x - self.start_x)
+        height = self.start_height + (event.y - self.start_y)
+        self.root.geometry(f"{width}x{height}")
+
+    def minimize_window(self):
+        self.root.iconify()
+
+    def toggle_maximize(self):
+        if not self.is_maximized:
+            # Store current geometry
+            self.maximize_restore_geometry = self.root.geometry()
+            # Get screen dimensions
+            screen_width = self.root.winfo_screenwidth()
+            screen_height = self.root.winfo_screenheight()
+            # Maximize
+            self.root.geometry(f"{screen_width}x{screen_height}+0+0")
+            self.is_maximized = True
+        else:
+            # Restore previous geometry
+            self.root.geometry(self.maximize_restore_geometry)
+            self.is_maximized = False
+
+    def update_title(self, text):
+        self.title_label.configure(text=text)
+        self.root.title(text)  # Keep internal title updated
 
     def on_closing(self):
         """Handle window closing"""
@@ -233,14 +429,14 @@ class SupplementTracker:
 
     def setup_gui(self):
         # Create main frames with padding
-        main_frame = ttk.Frame(self.root, padding="10")
+        main_frame = ttk.Frame(self.root, padding="10", style='TFrame')
         main_frame.pack(fill='both', expand=True)
 
-        self.control_frame = ttk.Frame(main_frame)
+        self.control_frame = ttk.Frame(main_frame, style='TFrame')
         self.control_frame.pack(fill='x', pady=(0, 10))
 
         # Button frame with modern spacing
-        button_frame = ttk.Frame(self.control_frame)
+        button_frame = ttk.Frame(self.control_frame, style='TFrame')
         button_frame.pack(side='left')
 
         # Add controls with consistent spacing
@@ -260,13 +456,11 @@ class SupplementTracker:
         def toggle_theme():
             self.theme.toggle_theme()
             self.style = self.theme.apply(self.root)
-            # Update all open windows
+            # Update theme button text and all windows
+            theme_btn.configure(text="🌙 Dark" if not self.theme.is_dark else "☀️ Light")
             for window in self.root.winfo_children():
                 if isinstance(window, tk.Toplevel):
-                    window.configure(bg=self.theme.colors['background'])
-                    for child in window.winfo_children():
-                        if isinstance(child, ttk.Frame):
-                            child.configure(style='TFrame')
+                    self.theme._apply_to_widget(window)
 
         theme_btn = ttk.Button(
             button_frame,
@@ -289,41 +483,43 @@ class SupplementTracker:
         self.list_frame = ttk.Frame(main_frame)
         self.list_frame.pack(fill='both', expand=True)
 
-        # Add scrollbars
-        tree_scroll_y = ttk.Scrollbar(self.list_frame)
+        # Add scrollbars with modern styling
+        tree_scroll_y = ttk.Scrollbar(self.list_frame, orient="vertical", style='Vertical.TScrollbar')
         tree_scroll_y.pack(side='right', fill='y')
         
-        tree_scroll_x = ttk.Scrollbar(self.list_frame, orient='horizontal')
+        tree_scroll_x = ttk.Scrollbar(self.list_frame, orient="horizontal", style='Horizontal.TScrollbar')
         tree_scroll_x.pack(side='bottom', fill='x')
 
         # Create and configure treeview
         self.tree = ttk.Treeview(self.list_frame, 
             columns=('Name', 'Count', 'Initial', 'Cost', 'Tags', 'Daily', 'Days Left'),
             yscrollcommand=tree_scroll_y.set,
-            xscrollcommand=tree_scroll_x.set
+            xscrollcommand=tree_scroll_x.set,
+            style='Treeview'
         )
+        
+        # Hide the first empty column
+        self.tree['show'] = 'headings'
         
         # Configure scrollbars
         tree_scroll_y.config(command=self.tree.yview)
         tree_scroll_x.config(command=self.tree.xview)
 
-        # Configure column headings
-        self.tree.heading('Name', text='Name', anchor='w')
-        self.tree.heading('Count', text='Count', anchor='w')
-        self.tree.heading('Initial', text='Initial', anchor='w')
-        self.tree.heading('Cost', text='Cost', anchor='w')
-        self.tree.heading('Tags', text='Tags', anchor='w')
-        self.tree.heading('Daily', text='Daily Dose', anchor='w')
-        self.tree.heading('Days Left', text='Days Left', anchor='w')
-
-        # Configure column widths
-        self.tree.column('Name', width=150, minwidth=100)
-        self.tree.column('Count', width=70, minwidth=50)
-        self.tree.column('Initial', width=70, minwidth=50)
-        self.tree.column('Cost', width=80, minwidth=60)
-        self.tree.column('Tags', width=150, minwidth=100)
-        self.tree.column('Daily', width=80, minwidth=60)
-        self.tree.column('Days Left', width=80, minwidth=60)
+        # Configure column headings with explicit styles
+        column_widths = {
+            'Name': (150, 100),
+            'Count': (70, 50),
+            'Initial': (70, 50),
+            'Cost': (80, 60),
+            'Tags': (150, 100),
+            'Daily': (80, 60),
+            'Days Left': (80, 60)
+        }
+        
+        for col in column_widths:
+            width, minwidth = column_widths[col]
+            self.tree.heading(col, text=col, anchor='w')
+            self.tree.column(col, width=width, minwidth=minwidth, anchor='w')
 
         self.tree.pack(fill='both', expand=True)
 
@@ -331,7 +527,9 @@ class SupplementTracker:
         dialog = tk.Toplevel(self.root)
         dialog.title("Add Supplement")
         dialog.geometry("500x400")
-        dialog.configure(bg=self.theme.colors['background'])
+        
+        # Apply theme to dialog
+        self.theme._apply_to_widget(dialog)
         
         # Make dialog modal
         dialog.transient(self.root)
@@ -411,33 +609,49 @@ class SupplementTracker:
         calc.geometry("800x600")
         calc.configure(bg=self.theme.colors['background'])
         
+        # Apply theme to calculator window
+        self.theme._apply_to_widget(calc)
+        
         # Make calculator modal
         calc.transient(self.root)
         calc.grab_set()
 
-        main_frame = ttk.Frame(calc, padding="20")
+        main_frame = ttk.Frame(calc, padding="20", style='TFrame')
         main_frame.pack(fill='both', expand=True)
 
         # Title
         title_label = ttk.Label(main_frame, 
             text="Compare Supplement Costs", 
-            font=self.theme.fonts['heading']
+            font=self.theme.fonts['heading'],
+            style='TLabel'
         )
         title_label.pack(pady=(0, 20))
 
+        # Create container frame for canvas
+        canvas_container = ttk.Frame(main_frame, style='TFrame')
+        canvas_container.pack(fill='both', expand=True)
+        canvas_container.grid_rowconfigure(0, weight=1)
+        canvas_container.grid_columnconfigure(0, weight=1)
+
         # Scrollable frame for options
-        canvas = tk.Canvas(main_frame, bg=self.theme.colors['background'])
-        scrollbar = ttk.Scrollbar(main_frame, orient="vertical", command=canvas.yview)
-        options_frame = ttk.Frame(canvas)
+        canvas = tk.Canvas(
+            canvas_container,
+            bg=self.theme.colors['background'],
+            highlightthickness=0,
+            bd=0
+        )
+        scrollbar = ttk.Scrollbar(canvas_container, orient="vertical", command=canvas.yview, style='Vertical.TScrollbar')
+        options_frame = ttk.Frame(canvas, style='TFrame')
         
+        # Configure canvas
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        # Pack scrollbar and canvas
-        scrollbar.pack(side="right", fill="y")
-        canvas.pack(side="left", fill="both", expand=True)
+        # Grid layout for better control
+        canvas.grid(row=0, column=0, sticky='nsew')
+        scrollbar.grid(row=0, column=1, sticky='ns')
         
         # Create window in canvas
-        canvas_frame = canvas.create_window((0, 0), window=options_frame, anchor="nw")
+        canvas_frame = canvas.create_window((0, 0), window=options_frame, anchor='nw', width=canvas.winfo_width())
 
         options = []
         option_frames = []
@@ -459,10 +673,10 @@ class SupplementTracker:
             
             # Add field labels and entries with consistent spacing
             for field in ['Dose Count', 'Price', 'Daily Dose']:
-                field_frame = ttk.Frame(fields_frame)
+                field_frame = ttk.Frame(fields_frame, style='TFrame')
                 field_frame.pack(side='left', padx=10)
-                ttk.Label(field_frame, text=field).pack(side='top')
-                entry = ttk.Entry(field_frame, width=15)
+                ttk.Label(field_frame, text=field, style='TLabel').pack(side='top')
+                entry = ttk.Entry(field_frame, width=15, style='TEntry')
                 entry.pack(side='top', pady=(5, 0))
                 entries[field] = entry
             
@@ -576,6 +790,7 @@ class SupplementTracker:
 
     def update_days_until_empty(self):
         if not self.supplements:
+            self.update_title("Supplement Tracker")
             return
 
         min_days = float('inf')
@@ -585,9 +800,9 @@ class SupplementTracker:
                 min_days = days
 
         if min_days != float('inf'):
-            self.root.title(f"Supplement Tracker - Next empty in {min_days:.1f} days")
+            self.update_title(f"Supplement Tracker - Next empty in {min_days:.1f} days")
         else:
-            self.root.title("Supplement Tracker")
+            self.update_title("Supplement Tracker")
 
     def save_as(self):
         filename = filedialog.asksaveasfilename(
