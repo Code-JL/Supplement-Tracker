@@ -4,12 +4,17 @@ A Python application to track your supplements, their quantities, and calculate 
 
 ## Features
 
-- Add and remove supplements
+- Add, edit, and remove supplements
 - Track supplement quantities and daily usage
 - Calculate days remaining for each supplement
 - Search through supplements by name or tags
 - Cost calculator to compare different supplement options
 - Automatic tracking of remaining doses based on daily usage
+- Toggle auto-decrement feature for each supplement
+- Right-click context menu for quick actions
+- Keyboard shortcuts for common operations
+- Visual feedback for supplements with auto-decrement disabled
+- Helpful tooltips for better user experience
 - Save and load data with custom .sup file format
 - Automatic count updates based on time passed since last save and whenever the supplement list is refreshed
 - Windows file association for .sup files
@@ -76,6 +81,25 @@ You can start the program in several ways:
    - Tags: Comma-separated tags (e.g., "vitamin, mineral")
    - Link: URL to the product (optional)
    - Daily Dose: Number of doses taken per day
+   - Auto-decrement: Toggle whether the supplement count should automatically decrease daily (checked by default)
+
+### Editing a Supplement
+
+You can edit a supplement in multiple ways:
+1. Right-click on a supplement and select "Edit" from the context menu
+2. Select a supplement and press Enter
+3. Double-click on a supplement
+
+The edit dialog allows you to modify all supplement properties, including the auto-decrement setting.
+
+### Using Keyboard Shortcuts
+
+The application supports several keyboard shortcuts for common actions:
+- **Ctrl+S**: Save the current file
+- **Enter**: Edit the selected supplement
+- **Delete**: Remove the selected supplement
+- **Ctrl+A**: Select all supplements
+- **Escape**: Clear selection
 
 ### Using the Cost Calculator
 
@@ -94,10 +118,15 @@ You can start the program in several ways:
 - Use "Load File" to open an existing .sup file
 - The program automatically tracks the save date and updates counts based on time passed whenever a file is loaded or the supplement list is refreshed
 - When closing, you'll be prompted to save any unsaved changes
+- Press Ctrl+S to quickly save your current file
 
 ### Searching
 
 Use the search box to filter supplements by name or tags.
+
+### Visual Indicators
+
+Supplements with auto-decrement disabled are visually distinguished in the list, making it easy to identify which supplements are not automatically decreasing their count.
 
 ## Data Storage
 
@@ -106,5 +135,10 @@ The application saves all supplement data to .sup files (JSON format). These fil
 - Save date for automatic count updates
 - Tags and links
 - Daily dosage information
+- Auto-decrement settings for each supplement
 
-The program automatically updates supplement counts based on the time passed since the last save when loading a file. 
+The program automatically updates supplement counts based on the time passed since the last save when loading a file, but only for supplements that have auto-decrement enabled.
+
+## Backward Compatibility
+
+The application maintains backward compatibility with older .sup files that don't include the auto-decrement property. When loading such files, all supplements will have auto-decrement enabled by default. 
