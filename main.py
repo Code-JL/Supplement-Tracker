@@ -294,7 +294,7 @@ class Supplement:
     """
     
     def __init__(self, name: str, current_count: int, initial_count: int, 
-                 cost: float, tags: List[str], link: str, daily_dose: int):
+                 cost: float, tags: List[str], link: str, daily_dose: int, auto_decrement: bool = True):
         """
         Initialize a new Supplement.
         
@@ -306,6 +306,7 @@ class Supplement:
             tags (List[str]): A list of tags associated with the supplement.
             link (str): A link to the supplement (e.g., purchase URL).
             daily_dose (int): The recommended daily dose of the supplement.
+            auto_decrement (bool): Whether to automatically decrement the count daily (default: True).
         """
         self.name = name
         self.current_count = current_count
@@ -314,6 +315,7 @@ class Supplement:
         self.tags = tags
         self.link = link
         self.daily_dose = daily_dose
+        self.auto_decrement = auto_decrement
         self.last_updated = datetime.now().strftime("%Y-%m-%d")
 
     def to_dict(self) -> Dict:
@@ -331,6 +333,7 @@ class Supplement:
             'tags': self.tags,
             'link': self.link,
             'daily_dose': self.daily_dose,
+            'auto_decrement': self.auto_decrement,
             'last_updated': self.last_updated
         }
 
@@ -352,7 +355,8 @@ class Supplement:
             data['cost'],
             data['tags'],
             data['link'],
-            data['daily_dose']
+            data['daily_dose'],
+            data.get('auto_decrement', True)  # Default to True for backward compatibility
         )
         supplement.last_updated = data['last_updated']
         return supplement
@@ -370,6 +374,9 @@ class Supplement:
 
     def update_count(self):
         """Update the current count based on the time passed since the last update."""
+        if not self.auto_decrement:
+            return
+            
         last_updated = datetime.strptime(self.last_updated, "%Y-%m-%d")
         days_passed = (datetime.now() - last_updated).days
         doses_taken = days_passed * self.daily_dose
@@ -407,6 +414,9 @@ class SupplementTracker:
             
             self.supplements: List[Supplement] = []
             self.setup_gui()
+            
+            # Add global keyboard shortcuts with feedback
+            self.root.bind("<Control-s>", lambda event: self.save_with_feedback())
             
             # Load initial file or last used file
             if initial_file and os.path.exists(initial_file):
@@ -544,6 +554,9 @@ class SupplementTracker:
             self.tree.column(col, width=width, minwidth=minwidth, anchor='w')
 
         self.tree.pack(fill='both', expand=True)
+        
+        # Bind right-click event to show context menu
+        self.tree.bind("<Button-3>", self.show_context_menu)
 
     def show_add_dialog(self):
         """Show the dialog for adding a new supplement."""
@@ -588,6 +601,18 @@ class SupplementTracker:
             entry.pack(side='right', expand=True, fill='x', padx=(10, 0))
             entries[key] = entry
 
+        # Add auto-decrement checkbox
+        auto_decrement_frame = ttk.Frame(main_frame)
+        auto_decrement_frame.pack(fill='x', pady=5)
+        
+        auto_decrement_var = tk.BooleanVar(value=True)
+        auto_decrement_check = ttk.Checkbutton(
+            auto_decrement_frame, 
+            text="Auto-decrement daily", 
+            variable=auto_decrement_var
+        )
+        auto_decrement_check.pack(side='left')
+
         # Button frame
         button_frame = ttk.Frame(main_frame)
         button_frame.pack(pady=(20, 0))
@@ -604,7 +629,8 @@ class SupplementTracker:
                     float(entries['cost'].get()),
                     [tag.strip() for tag in entries['tags'].get().split(',')],
                     entries['link'].get(),
-                    int(entries['daily'].get())
+                    int(entries['daily'].get()),
+                    auto_decrement_var.get()
                 )
                 self.supplements.append(supplement)
                 self.save_supplements()
@@ -899,9 +925,15 @@ class SupplementTracker:
                 days_passed = (datetime.now() - save_date).days
                 
                 for supplement in self.supplements:
-                    # Update the counts based on days passed
-                    doses_taken = days_passed * supplement.daily_dose
-                    supplement.current_count = max(0, supplement.current_count - doses_taken)
+                    # Ensure auto_decrement is set (for backward compatibility)
+                    if not hasattr(supplement, 'auto_decrement'):
+                        supplement.auto_decrement = True
+                        
+                    # Update the counts based on days passed if auto_decrement is enabled
+                    if supplement.auto_decrement:
+                        doses_taken = days_passed * supplement.daily_dose
+                        supplement.current_count = max(0, supplement.current_count - doses_taken)
+                    
                     supplement.last_updated = datetime.now().strftime("%Y-%m-%d")
                 
                 self.update_list()
@@ -919,6 +951,159 @@ class SupplementTracker:
             handle_error(e, f"Invalid supplement data format in file: {filename}")
         except Exception as e:
             handle_error(e, f"Failed to load file: {filename}")
+
+    def show_context_menu(self, event):
+        """
+        Show the context menu for the treeview.
+        
+        Args:
+            event: The event that triggered the context menu.
+        """
+        # Select the item under the cursor
+        item_id = self.tree.identify_row(event.y)
+        if item_id:
+            # If not already selected, select it
+            if not self.tree.selection() or item_id not in self.tree.selection():
+                self.tree.selection_set(item_id)
+            
+            # Create context menu
+            context_menu = tk.Menu(self.root, tearoff=0)
+            context_menu.add_command(label="Edit", command=self.edit_selected)
+            context_menu.add_command(label="Remove", command=self.remove_selected)
+            
+            # Display the menu at the cursor position
+            context_menu.tk_popup(event.x_root, event.y_root)
+            
+    def edit_selected(self):
+        """Edit the selected supplement."""
+        selected = self.tree.selection()
+        if not selected:
+            messagebox.showinfo("Info", "Please select a supplement to edit")
+            return
+            
+        # Get the selected supplement
+        index = int(selected[0])
+        if index < 0 or index >= len(self.supplements):
+            return
+            
+        supplement = self.supplements[index]
+        
+        # Create edit dialog
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Edit Supplement")
+        dialog.geometry("500x400")
+        
+        # Apply theme to dialog
+        self.theme._apply_to_widget(dialog)
+        
+        # Make dialog modal
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Create main frame with padding
+        main_frame = ttk.Frame(dialog, padding="20")
+        main_frame.pack(fill='both', expand=True)
+
+        # Create entry fields
+        entries = {}
+        fields = [
+            ('name', "Name:", supplement.name),
+            ('count', "Current Count:", str(supplement.current_count)),
+            ('initial', "Initial Count:", str(supplement.initial_count)),
+            ('cost', "Cost:", str(supplement.cost)),
+            ('tags', "Tags (comma-separated):", ", ".join(supplement.tags)),
+            ('link', "Link:", supplement.link),
+            ('daily', "Daily Dose:", str(supplement.daily_dose))
+        ]
+
+        # Calculate maximum label width
+        max_label_width = max(len(label) for _, label, _ in fields)
+
+        for key, label, value in fields:
+            frame = ttk.Frame(main_frame)
+            frame.pack(fill='x', pady=5)
+            
+            label_widget = ttk.Label(frame, text=label, width=max_label_width + 2)
+            label_widget.pack(side='left')
+            
+            entry = ttk.Entry(frame)
+            entry.insert(0, value)
+            entry.pack(side='right', expand=True, fill='x', padx=(10, 0))
+            entries[key] = entry
+
+        # Add auto-decrement checkbox
+        auto_decrement_frame = ttk.Frame(main_frame)
+        auto_decrement_frame.pack(fill='x', pady=5)
+        
+        auto_decrement_var = tk.BooleanVar(value=supplement.auto_decrement)
+        auto_decrement_check = ttk.Checkbutton(
+            auto_decrement_frame, 
+            text="Auto-decrement daily", 
+            variable=auto_decrement_var
+        )
+        auto_decrement_check.pack(side='left')
+
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=(20, 0))
+        
+        ttk.Button(
+            button_frame, 
+            text="Save", 
+            command=lambda: self.update_supplement(index, entries, auto_decrement_var, dialog)
+        ).pack(side='left', padx=5)
+        
+        ttk.Button(
+            button_frame, 
+            text="Cancel", 
+            command=dialog.destroy
+        ).pack(side='left', padx=5)
+        
+    def update_supplement(self, index, entries, auto_decrement_var, dialog):
+        """
+        Update a supplement with new values.
+        
+        Args:
+            index (int): The index of the supplement to update.
+            entries (Dict): A dictionary of entry widgets containing the new values.
+            auto_decrement_var (tk.BooleanVar): The auto-decrement checkbox variable.
+            dialog (tk.Toplevel): The dialog window to close after updating.
+        """
+        try:
+            # Create a new supplement with the updated values
+            updated_supplement = Supplement(
+                entries['name'].get(),
+                int(entries['count'].get()),
+                int(entries['initial'].get()),
+                float(entries['cost'].get()),
+                [tag.strip() for tag in entries['tags'].get().split(',')],
+                entries['link'].get(),
+                int(entries['daily'].get()),
+                auto_decrement_var.get()
+            )
+            
+            # Preserve the last_updated date
+            updated_supplement.last_updated = self.supplements[index].last_updated
+            
+            # Update the supplement in the list
+            self.supplements[index] = updated_supplement
+            
+            # Save changes and update the display
+            self.save_supplements()
+            self.update_list()
+            
+            # Close the dialog
+            dialog.destroy()
+        except ValueError as e:
+            messagebox.showerror("Error", "Please check your input values")
+
+    def save_with_feedback(self):
+        """Save supplements and provide feedback to the user."""
+        filename = self.settings.get("last_file", "supplements.sup")
+        self.save_supplements(filename)
+        # Show a brief message in the status bar or a small popup
+        messagebox.showinfo("Saved", f"File saved to {filename}")
+        return "break"  # Prevent the event from propagating
 
     def run(self):
         """Run the main event loop of the application."""
