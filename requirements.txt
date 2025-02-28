@@ -1,0 +1,11 @@
+# Required for building executable:
+pyinstaller>=6.3.0
+
+# No additional runtime requirements - all packages used are part of Python standard library:
+# - tkinter
+# - json
+# - datetime
+# - typing
+# - sys
+# - os
+# - winreg (for Windows file association) 
