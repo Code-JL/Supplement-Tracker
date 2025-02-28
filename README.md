@@ -11,7 +11,7 @@ A Python application to track your supplements, their quantities, and calculate 
 - Cost calculator to compare different supplement options
 - Automatic tracking of remaining doses based on daily usage
 - Save and load data with custom .sup file format
-- Automatic count updates based on time passed since last save
+- Automatic count updates based on time passed since last save and whenever the supplement list is refreshed
 - Windows file association for .sup files
 - Drag and drop support for .sup files
 - Available as both Python script and standalone executable
@@ -92,7 +92,7 @@ You can start the program in several ways:
 
 - Use "Save As..." to save your data to a new .sup file
 - Use "Load File" to open an existing .sup file
-- The program automatically tracks the save date and updates counts based on time passed
+- The program automatically tracks the save date and updates counts based on time passed whenever a file is loaded or the supplement list is refreshed
 - When closing, you'll be prompted to save any unsaved changes
 
 ### Searching

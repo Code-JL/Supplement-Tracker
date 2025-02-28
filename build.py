@@ -1,3 +1,10 @@
+"""
+Build script for the Supplement Tracker application.
+
+This script builds the executable for the Supplement Tracker application using PyInstaller.
+It also provides instructions for setting up file associations on Windows.
+"""
+
 import os
 import sys
 import subprocess
@@ -5,7 +12,7 @@ import shutil
 import time
 
 def clean_dist():
-    """Clean up the dist directory"""
+    """Clean up the dist directory."""
     dist_dir = 'dist'
     if os.path.exists(dist_dir):
         try:
@@ -22,7 +29,7 @@ def clean_dist():
                 sys.exit(1)
 
 def build_exe():
-    """Build the executable"""
+    """Build the executable using PyInstaller."""
     # Clean up first
     clean_dist()
     
@@ -42,6 +49,7 @@ def build_exe():
     cmd = [x for x in cmd if x]
     
     try:
+        # Run PyInstaller
         subprocess.run(cmd, check=True)
         print("\nBuild successful! Executable created in 'dist' directory")
         

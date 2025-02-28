@@ -1,3 +1,10 @@
+"""
+Supplement Tracker Application
+
+This module contains the main Supplement Tracker application built using Tkinter.
+It allows users to track their supplement inventory, calculate costs, and more.
+"""
+
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
 import json
@@ -6,11 +13,65 @@ import webbrowser
 from typing import List, Dict
 import sys
 import os
+import logging
+
+# Set up logging
+logging.basicConfig(
+    filename='supplement_tracker.log',
+    level=logging.ERROR,
+    format='%(asctime)s - %(levelname)s - %(message)s'
+)
+
+def load_settings():
+    """Load user settings from settings.json."""
+    default_settings = {
+        "theme": "dark",
+        "last_file": None
+    }
+    try:
+        if os.path.exists('settings.json'):
+            with open('settings.json', 'r') as f:
+                return json.load(f)
+        return default_settings
+    except Exception as e:
+        logging.error("Failed to load settings", exc_info=True)
+        return default_settings
+
+def save_settings(settings):
+    """Save user settings to settings.json."""
+    try:
+        with open('settings.json', 'w') as f:
+            json.dump(settings, f, indent=4)
+    except Exception as e:
+        logging.error("Failed to save settings", exc_info=True)
+
+def handle_error(error, user_message=None):
+    """Centralized error handling function."""
+    logging.error(str(error), exc_info=True)
+    if user_message:
+        messagebox.showerror("Error", user_message)
+    else:
+        messagebox.showerror("Error", str(error))
 
 class ModernTheme:
+    """
+    A modern theme for Tkinter applications.
+    
+    This class provides a customizable dark/light theme with a modern look and feel.
+    It can be applied to Tkinter and ttk widgets.
+    """
+    
     def __init__(self, is_dark=True):
-        self.is_dark = is_dark
+        """
+        Initialize the ModernTheme.
+        
+        Args:
+            is_dark (bool): Whether to use a dark theme (default: True).
+        """
+        self.settings = load_settings()
+        self.is_dark = self.settings.get("theme", "dark") == "dark" if is_dark is None else is_dark
         self.update_colors()
+        self.style = None  # Will be set in apply()
         
         self.fonts = {
             'heading': ('Segoe UI', 11, 'bold'),
@@ -19,6 +80,7 @@ class ModernTheme:
         }
 
     def update_colors(self):
+        """Update the theme colors based on the current mode (dark/light)."""
         if self.is_dark:
             self.colors = {
                 'primary': '#2196F3',    # Material Blue
@@ -41,6 +103,15 @@ class ModernTheme:
             }
 
     def apply(self, root):
+        """
+        Apply the theme to a Tkinter application.
+        
+        Args:
+            root (Union[tk.Tk, tk.Toplevel]): The root window of the application.
+            
+        Returns:
+            ttk.Style: The style object with the applied theme.
+        """
         style = ttk.Style()
         style.theme_use('default')
         
@@ -165,7 +236,12 @@ class ModernTheme:
         return style
     
     def _apply_to_widget(self, widget):
-        """Recursively apply theme to widget and its children"""
+        """
+        Recursively apply the theme to a widget and its children.
+        
+        Args:
+            widget (Union[ttk.Widget, tk.Widget]): The widget to apply the theme to.
+        """
         if isinstance(widget, ttk.Widget):
             # TTK widgets use style system
             widget_class = widget.winfo_class()
@@ -202,12 +278,35 @@ class ModernTheme:
             self._apply_to_widget(child)
 
     def toggle_theme(self):
+        """Toggle between dark and light theme modes."""
         self.is_dark = not self.is_dark
         self.update_colors()
+        # Save theme preference
+        self.settings["theme"] = "dark" if self.is_dark else "light"
+        save_settings(self.settings)
 
 class Supplement:
+    """
+    Represents a supplement.
+    
+    This class encapsulates the data and behavior of a supplement, including its name,
+    counts, cost, tags, link, and daily dose.
+    """
+    
     def __init__(self, name: str, current_count: int, initial_count: int, 
                  cost: float, tags: List[str], link: str, daily_dose: int):
+        """
+        Initialize a new Supplement.
+        
+        Args:
+            name (str): The name of the supplement.
+            current_count (int): The current count of the supplement.
+            initial_count (int): The initial count of the supplement.
+            cost (float): The cost of the supplement.
+            tags (List[str]): A list of tags associated with the supplement.
+            link (str): A link to the supplement (e.g., purchase URL).
+            daily_dose (int): The recommended daily dose of the supplement.
+        """
         self.name = name
         self.current_count = current_count
         self.initial_count = initial_count
@@ -218,6 +317,12 @@ class Supplement:
         self.last_updated = datetime.now().strftime("%Y-%m-%d")
 
     def to_dict(self) -> Dict:
+        """
+        Convert the Supplement to a dictionary.
+        
+        Returns:
+            Dict: A dictionary representation of the Supplement.
+        """
         return {
             'name': self.name,
             'current_count': self.current_count,
@@ -231,6 +336,15 @@ class Supplement:
 
     @classmethod
     def from_dict(cls, data: Dict):
+        """
+        Create a Supplement from a dictionary.
+        
+        Args:
+            data (Dict): A dictionary containing the Supplement data.
+            
+        Returns:
+            Supplement: A Supplement instance created from the dictionary.
+        """
         supplement = cls(
             data['name'],
             data['current_count'],
@@ -244,11 +358,18 @@ class Supplement:
         return supplement
 
     def days_remaining(self) -> float:
+        """
+        Calculate the number of days remaining based on the current count and daily dose.
+        
+        Returns:
+            float: The number of days remaining. Returns infinity if daily dose is zero.
+        """
         if self.daily_dose == 0:
             return float('inf')
         return self.current_count / self.daily_dose
 
     def update_count(self):
+        """Update the current count based on the time passed since the last update."""
         last_updated = datetime.strptime(self.last_updated, "%Y-%m-%d")
         days_passed = (datetime.now() - last_updated).days
         doses_taken = days_passed * self.daily_dose
@@ -256,178 +377,78 @@ class Supplement:
         self.last_updated = datetime.now().strftime("%Y-%m-%d")
 
 class SupplementTracker:
+    """
+    The main Supplement Tracker application.
+    
+    This class represents the Supplement Tracker application window and its functionality.
+    It allows users to manage their supplement inventory, calculate costs, and more.
+    """
+    
     def __init__(self, initial_file=None):
-        self.root = tk.Tk()
-        self.root.title("Supplement Tracker")
-        self.root.geometry("1000x700")
+        """
+        Initialize the SupplementTracker.
         
-        # Remove default title bar
-        self.root.overrideredirect(True)
-        
-        # Apply modern theme
-        self.theme = ModernTheme(is_dark=True)
-        self.style = self.theme.apply(self.root)
-        
-        # Create custom title bar
-        self.create_title_bar()
-        
-        # Set up file association handling
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        self.root.createcommand('::tk::mac::OpenDocument', self.open_file_from_system)
-        
-        self.supplements: List[Supplement] = []
-        self.setup_gui()
-        
-        if initial_file and os.path.exists(initial_file):
-            self.load_supplements(initial_file)
-        else:
-            self.load_supplements()
-        
-        # Bind window dragging
-        self.title_bar.bind('<Button-1>', self.start_move)
-        self.title_bar.bind('<B1-Motion>', self.on_move)
-        
-        # Make window resizable
-        self.root.bind('<Button-3>', self.start_resize)
-        self.root.bind('<B3-Motion>', self.on_resize)
-
-    def create_title_bar(self):
-        # Create title bar frame
-        self.title_bar = ttk.Frame(self.root, style='TitleBar.TFrame')
-        self.title_bar.pack(fill='x', side='top')
-        
-        # Configure title bar style
-        self.style.configure('TitleBar.TFrame',
-            background=self.theme.colors['surface'],
-            relief='flat'
-        )
-        
-        # Window title
-        self.title_label = ttk.Label(
-            self.title_bar,
-            text="Supplement Tracker",
-            style='TitleBar.TLabel'
-        )
-        self.title_label.pack(side='left', padx=10, pady=5)
-        
-        # Configure title label style
-        self.style.configure('TitleBar.TLabel',
-            background=self.theme.colors['surface'],
-            foreground=self.theme.colors['text'],
-            font=self.theme.fonts['body']
-        )
-        
-        # Control buttons frame
-        control_frame = ttk.Frame(self.title_bar, style='TitleBar.TFrame')
-        control_frame.pack(side='right', padx=5)
-        
-        # Minimize button
-        min_btn = ttk.Button(
-            control_frame,
-            text="—",
-            width=3,
-            style='Titlebar.TButton',
-            command=self.minimize_window
-        )
-        min_btn.pack(side='left', padx=2)
-        
-        # Maximize button
-        max_btn = ttk.Button(
-            control_frame,
-            text="□",
-            width=3,
-            style='Titlebar.TButton',
-            command=self.toggle_maximize
-        )
-        max_btn.pack(side='left', padx=2)
-        
-        # Close button
-        close_btn = ttk.Button(
-            control_frame,
-            text="✕",
-            width=3,
-            style='Titlebar.TButton',
-            command=self.on_closing
-        )
-        close_btn.pack(side='left', padx=2)
-        
-        # Configure title bar button style
-        self.style.configure('Titlebar.TButton',
-            relief='flat',
-            background=self.theme.colors['surface'],
-            foreground=self.theme.colors['text']
-        )
-        
-        self.style.map('Titlebar.TButton',
-            background=[
-                ('active', self.theme.colors['hover']),
-                ('pressed', self.theme.colors['primary'])
-            ]
-        )
-        
-        # Store window state
-        self.is_maximized = False
-        self.maximize_restore_geometry = None
-
-    def start_move(self, event):
-        self.x = event.x
-        self.y = event.y
-
-    def on_move(self, event):
-        deltax = event.x - self.x
-        deltay = event.y - self.y
-        x = self.root.winfo_x() + deltax
-        y = self.root.winfo_y() + deltay
-        self.root.geometry(f"+{x}+{y}")
-
-    def start_resize(self, event):
-        self.start_x = event.x
-        self.start_y = event.y
-        self.start_width = self.root.winfo_width()
-        self.start_height = self.root.winfo_height()
-
-    def on_resize(self, event):
-        width = self.start_width + (event.x - self.start_x)
-        height = self.start_height + (event.y - self.start_y)
-        self.root.geometry(f"{width}x{height}")
-
-    def minimize_window(self):
-        self.root.iconify()
-
-    def toggle_maximize(self):
-        if not self.is_maximized:
-            # Store current geometry
-            self.maximize_restore_geometry = self.root.geometry()
-            # Get screen dimensions
-            screen_width = self.root.winfo_screenwidth()
-            screen_height = self.root.winfo_screenheight()
-            # Maximize
-            self.root.geometry(f"{screen_width}x{screen_height}+0+0")
-            self.is_maximized = True
-        else:
-            # Restore previous geometry
-            self.root.geometry(self.maximize_restore_geometry)
-            self.is_maximized = False
+        Args:
+            initial_file (str): The path to the initial supplement data file (default: None).
+        """
+        try:
+            self.root = tk.Tk()
+            self.root.title("Supplement Tracker")
+            self.root.geometry("1000x700")
+            
+            # Load settings and apply theme
+            self.settings = load_settings()
+            self.theme = ModernTheme(is_dark=None)  # Use saved theme preference
+            self.style = self.theme.apply(self.root)
+            
+            # Set up file association handling
+            self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
+            self.root.createcommand('::tk::mac::OpenDocument', self.open_file_from_system)
+            
+            self.supplements: List[Supplement] = []
+            self.setup_gui()
+            
+            # Load initial file or last used file
+            if initial_file and os.path.exists(initial_file):
+                self.load_supplements(initial_file)
+            elif self.settings.get("last_file") and os.path.exists(self.settings["last_file"]):
+                self.load_supplements(self.settings["last_file"])
+            else:
+                self.load_supplements()
+        except Exception as e:
+            handle_error(e, "Failed to initialize application")
+            sys.exit(1)
 
     def update_title(self, text):
-        self.title_label.configure(text=text)
-        self.root.title(text)  # Keep internal title updated
+        """
+        Update the window title.
+        
+        Args:
+            text (str): The new window title.
+        """
+        self.root.title(text)
 
     def on_closing(self):
-        """Handle window closing"""
+        """Handle window closing."""
         if self.supplements:
             if messagebox.askyesno("Save Changes", "Would you like to save changes before closing?"):
                 self.save_supplements()
         self.root.destroy()
 
     def open_file_from_system(self, filename):
-        """Handle system file open requests"""
+        """
+        Handle system file open requests.
+        
+        Args:
+            filename (str): The path to the file to open.
+        """
         try:
             self.load_supplements(filename)
         except Exception as e:
             messagebox.showerror("Error", f"Failed to open file: {str(e)}")
 
     def setup_gui(self):
+        """Set up the main GUI elements of the application."""
         # Create main frames with padding
         main_frame = ttk.Frame(self.root, padding="10", style='TFrame')
         main_frame.pack(fill='both', expand=True)
@@ -456,6 +477,7 @@ class SupplementTracker:
         def toggle_theme():
             self.theme.toggle_theme()
             self.style = self.theme.apply(self.root)
+            
             # Update theme button text and all windows
             theme_btn.configure(text="🌙 Dark" if not self.theme.is_dark else "☀️ Light")
             for window in self.root.winfo_children():
@@ -524,6 +546,7 @@ class SupplementTracker:
         self.tree.pack(fill='both', expand=True)
 
     def show_add_dialog(self):
+        """Show the dialog for adding a new supplement."""
         dialog = tk.Toplevel(self.root)
         dialog.title("Add Supplement")
         dialog.geometry("500x400")
@@ -591,6 +614,7 @@ class SupplementTracker:
                 messagebox.showerror("Error", "Please check your input values")
 
     def remove_selected(self):
+        """Remove the selected supplement(s) from the list."""
         selected = self.tree.selection()
         if not selected:
             return
@@ -604,6 +628,7 @@ class SupplementTracker:
             self.update_list()
 
     def show_calculator(self):
+        """Show the cost calculator dialog."""
         calc = tk.Toplevel(self.root)
         calc.title("Cost Calculator")
         calc.geometry("800x600")
@@ -765,6 +790,7 @@ class SupplementTracker:
         add_option()
 
     def update_list(self):
+        """Update the supplement list based on the current data and search term."""
         for item in self.tree.get_children():
             self.tree.delete(item)
 
@@ -789,6 +815,7 @@ class SupplementTracker:
         self.update_days_until_empty()
 
     def update_days_until_empty(self):
+        """Update the window title with the number of days until a supplement runs out."""
         if not self.supplements:
             self.update_title("Supplement Tracker")
             return
@@ -805,36 +832,63 @@ class SupplementTracker:
             self.update_title("Supplement Tracker")
 
     def save_as(self):
-        filename = filedialog.asksaveasfilename(
-            defaultextension=".sup",
-            filetypes=[("Supplement files", "*.sup"), ("All files", "*.*")],
-            initialfile="supplements.sup"
-        )
-        if filename:
-            self.save_supplements(filename)
-            messagebox.showinfo("Success", f"Data saved to {filename}")
+        """Save the current supplement data to a new file."""
+        try:
+            filename = filedialog.asksaveasfilename(
+                defaultextension=".sup",
+                filetypes=[("Supplement files", "*.sup"), ("All files", "*.*")],
+                initialfile="supplements.sup"
+            )
+            if filename:
+                self.save_supplements(filename)
+                messagebox.showinfo("Success", f"Data saved to {filename}")
+                # Update last file in settings
+                self.settings["last_file"] = filename
+                save_settings(self.settings)
+        except Exception as e:
+            handle_error(e, "Failed to save file")
 
     def load_file(self):
-        filename = filedialog.askopenfilename(
-            defaultextension=".sup",
-            filetypes=[("Supplement files", "*.sup"), ("All files", "*.*")]
-        )
-        if filename:
-            try:
+        """Load supplement data from a file."""
+        try:
+            filename = filedialog.askopenfilename(
+                defaultextension=".sup",
+                filetypes=[("Supplement files", "*.sup"), ("All files", "*.*")]
+            )
+            if filename:
                 self.load_supplements(filename)
                 messagebox.showinfo("Success", f"Data loaded from {filename}")
-            except Exception as e:
-                messagebox.showerror("Error", f"Failed to load file: {str(e)}")
+        except Exception as e:
+            handle_error(e, "Failed to load file")
 
     def save_supplements(self, filename='supplements.sup'):
-        data = {
-            'supplements': [s.to_dict() for s in self.supplements],
-            'save_date': datetime.now().strftime("%Y-%m-%d")
-        }
-        with open(filename, 'w') as f:
-            json.dump(data, f, indent=4)
+        """
+        Save the current supplement data to a file.
+        
+        Args:
+            filename (str): The path to the file to save the data to (default: 'supplements.sup').
+        """
+        try:
+            data = {
+                'supplements': [s.to_dict() for s in self.supplements],
+                'save_date': datetime.now().strftime("%Y-%m-%d")
+            }
+            with open(filename, 'w') as f:
+                json.dump(data, f, indent=4)
+            
+            # Update last file in settings
+            self.settings["last_file"] = filename
+            save_settings(self.settings)
+        except Exception as e:
+            handle_error(e, f"Failed to save file: {filename}")
 
     def load_supplements(self, filename='supplements.sup'):
+        """
+        Load supplement data from a file.
+        
+        Args:
+            filename (str): The path to the file to load the data from (default: 'supplements.sup').
+        """
         try:
             with open(filename, 'r') as f:
                 data = json.load(f)
@@ -851,18 +905,27 @@ class SupplementTracker:
                     supplement.last_updated = datetime.now().strftime("%Y-%m-%d")
                 
                 self.update_list()
+                
+                # Update last file in settings
+                if filename != 'supplements.sup':  # Don't save default filename
+                    self.settings["last_file"] = filename
+                    save_settings(self.settings)
         except FileNotFoundError:
-            pass
+            if filename != 'supplements.sup':
+                handle_error(FileNotFoundError(f"File not found: {filename}"))
         except json.JSONDecodeError:
-            raise Exception("Invalid JSON file format")
-        except KeyError:
-            raise Exception("Invalid supplement data format")
+            handle_error(ValueError(f"Invalid JSON format in file: {filename}"))
+        except KeyError as e:
+            handle_error(e, f"Invalid supplement data format in file: {filename}")
+        except Exception as e:
+            handle_error(e, f"Failed to load file: {filename}")
 
     def run(self):
+        """Run the main event loop of the application."""
         self.root.mainloop()
 
 def setup_file_association():
-    """Set up file association for .sup files"""
+    """Set up file association for .sup files on Windows."""
     import winreg
     import sys
     
@@ -877,15 +940,22 @@ def setup_file_association():
             winreg.SetValue(key, "", winreg.REG_SZ, "Supplement Tracker File")
             with winreg.CreateKey(key, r"shell\open\command") as cmd_key:
                 winreg.SetValue(cmd_key, "", winreg.REG_SZ, app_path)
-
+        
+        print("File association setup completed successfully")
+        
     except Exception as e:
-        print(f"Failed to set up file association: {e}")
+        error_msg = f"Failed to set up file association: {str(e)}"
+        logging.error(error_msg, exc_info=True)
+        print(error_msg)
+        return False
+    
+    return True
 
 if __name__ == "__main__":
     # Set up file association (only needs to be done once)
     if len(sys.argv) > 1 and sys.argv[1] == "--register":
-        setup_file_association()
-        sys.exit(0)
+        success = setup_file_association()
+        sys.exit(0 if success else 1)
 
     # Normal application startup
     initial_file = sys.argv[1] if len(sys.argv) > 1 else None
