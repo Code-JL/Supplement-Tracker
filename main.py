@@ -14,6 +14,9 @@ from typing import List, Dict
 import sys
 import os
 import logging
+import shutil
+import gzip
+import time
 
 # Set up logging
 logging.basicConfig(
@@ -22,16 +25,276 @@ logging.basicConfig(
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
+class BackupManager:
+    """
+    Manages the backup system for supplement data files.
+    
+    This class handles creating, managing, and restoring backups of supplement data files.
+    It supports automatic and manual backups, rotation of old backups, and metadata tracking.
+    """
+    
+    def __init__(self, settings, max_backups=5, backup_dir='./backup'):
+        """
+        Initialize the BackupManager.
+        
+        Args:
+            settings (dict): The application settings dictionary.
+            max_backups (int): Maximum number of backups to keep (default: 5).
+            backup_dir (str): Directory to store backups (default: './backup').
+        """
+        self.settings = settings
+        
+        # Initialize backup settings with defaults if not present
+        if 'backup' not in self.settings:
+            self.settings['backup'] = {
+                'max_backups': max_backups,
+                'backup_dir': backup_dir,
+                'compression_enabled': False,
+                'min_backup_interval_minutes': 60
+            }
+        
+        self.backup_settings = self.settings['backup']
+        self.last_backup_time = 0
+        self.backup_index_file = os.path.join(self.backup_settings['backup_dir'], 'backup_index.json')
+        self.backup_index = self._load_backup_index()
+        
+        # Ensure backup directory exists
+        self.ensure_backup_directory()
+    
+    def ensure_backup_directory(self):
+        """Create the backup directory if it doesn't exist."""
+        try:
+            os.makedirs(self.backup_settings['backup_dir'], exist_ok=True)
+            return True
+        except Exception as e:
+            logging.error(f"Failed to create backup directory: {str(e)}", exc_info=True)
+            return False
+    
+    def _load_backup_index(self):
+        """Load the backup index file or create a new one if it doesn't exist."""
+        if os.path.exists(self.backup_index_file):
+            try:
+                with open(self.backup_index_file, 'r') as f:
+                    return json.load(f)
+            except Exception as e:
+                logging.error(f"Failed to load backup index: {str(e)}", exc_info=True)
+                return {'backups': []}
+        return {'backups': []}
+    
+    def _save_backup_index(self):
+        """Save the backup index to file."""
+        try:
+            with open(self.backup_index_file, 'w') as f:
+                json.dump(self.backup_index, f, indent=4)
+            return True
+        except Exception as e:
+            logging.error(f"Failed to save backup index: {str(e)}", exc_info=True)
+            return False
+    
+    def generate_backup_filename(self, source_file):
+        """
+        Generate a backup filename based on the current date and time.
+        
+        Args:
+            source_file (str): The original file path.
+            
+        Returns:
+            str: The generated backup filename.
+        """
+        # Get the base filename without path
+        base_filename = os.path.basename(source_file)
+        name, ext = os.path.splitext(base_filename)
+        
+        # Generate timestamp
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        backup_name = f"backup_{timestamp}{ext}"
+        
+        # Check for collisions
+        counter = 1
+        full_path = os.path.join(self.backup_settings['backup_dir'], backup_name)
+        while os.path.exists(full_path):
+            backup_name = f"backup_{timestamp}_{counter}{ext}"
+            full_path = os.path.join(self.backup_settings['backup_dir'], backup_name)
+            counter += 1
+        
+        return full_path
+    
+    def should_create_backup(self, is_auto_save=True):
+        """
+        Determine if a backup should be created based on settings and timing.
+        
+        Args:
+            is_auto_save (bool): Whether this is an automatic save (default: True).
+            
+        Returns:
+            bool: True if a backup should be created, False otherwise.
+        """
+        # Always create backup for manual saves
+        if not is_auto_save:
+            return True
+        
+        # Check time since last backup
+        current_time = time.time()
+        min_interval = self.backup_settings['min_backup_interval_minutes'] * 60
+        
+        if current_time - self.last_backup_time >= min_interval:
+            return True
+        
+        return False
+    
+    def create_backup(self, source_file, is_auto_save=True):
+        """
+        Create a backup of the specified file.
+        
+        Args:
+            source_file (str): The path to the file to back up.
+            is_auto_save (bool): Whether this is an automatic save (default: True).
+            
+        Returns:
+            str: The path to the created backup file, or None if backup failed.
+        """
+        if not os.path.exists(source_file):
+            logging.error(f"Source file does not exist: {source_file}")
+            return None
+        
+        # Check if we should create a backup
+        if not self.should_create_backup(is_auto_save):
+            return None
+        
+        try:
+            # Generate backup filename
+            backup_file = self.generate_backup_filename(source_file)
+            
+            # Copy the file
+            if self.backup_settings.get('compression_enabled', False):
+                with open(source_file, 'rb') as f_in:
+                    with gzip.open(f"{backup_file}.gz", 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+                backup_file = f"{backup_file}.gz"
+            else:
+                shutil.copy2(source_file, backup_file)
+            
+            # Update backup index
+            file_size = os.path.getsize(backup_file)
+            backup_info = {
+                'filename': os.path.basename(backup_file),
+                'original_file': source_file,
+                'timestamp': datetime.now().isoformat(),
+                'is_auto': is_auto_save,
+                'size': file_size
+            }
+            
+            self.backup_index['backups'].append(backup_info)
+            self._save_backup_index()
+            
+            # Update last backup time
+            self.last_backup_time = time.time()
+            
+            # Clean up old backups
+            self.cleanup_old_backups()
+            
+            logging.info(f"Created backup: {backup_file}")
+            return backup_file
+            
+        except Exception as e:
+            logging.error(f"Failed to create backup: {str(e)}", exc_info=True)
+            return None
+    
+    def list_backups(self):
+        """
+        List all available backups.
+        
+        Returns:
+            list: A list of backup information dictionaries.
+        """
+        return sorted(self.backup_index['backups'], 
+                     key=lambda x: x['timestamp'], 
+                     reverse=True)
+    
+    def cleanup_old_backups(self):
+        """
+        Remove old backups to stay within the maximum limit.
+        
+        Returns:
+            int: Number of backups removed.
+        """
+        backups = self.list_backups()
+        max_backups = self.backup_settings['max_backups']
+        
+        if len(backups) <= max_backups:
+            return 0
+        
+        removed = 0
+        for backup in backups[max_backups:]:
+            try:
+                backup_path = os.path.join(self.backup_settings['backup_dir'], backup['filename'])
+                if os.path.exists(backup_path):
+                    os.remove(backup_path)
+                    removed += 1
+            except Exception as e:
+                logging.error(f"Failed to remove old backup: {str(e)}", exc_info=True)
+        
+        # Update the index
+        self.backup_index['backups'] = backups[:max_backups]
+        self._save_backup_index()
+        
+        return removed
+    
+    def restore_from_backup(self, backup_file, target_file):
+        """
+        Restore a file from a backup.
+        
+        Args:
+            backup_file (str): The backup file to restore from.
+            target_file (str): The target file to restore to.
+            
+        Returns:
+            bool: True if restoration was successful, False otherwise.
+        """
+        try:
+            backup_path = os.path.join(self.backup_settings['backup_dir'], backup_file)
+            
+            if not os.path.exists(backup_path):
+                logging.error(f"Backup file does not exist: {backup_path}")
+                return False
+            
+            # Handle compressed backups
+            if backup_path.endswith('.gz'):
+                with gzip.open(backup_path, 'rb') as f_in:
+                    with open(target_file, 'wb') as f_out:
+                        shutil.copyfileobj(f_in, f_out)
+            else:
+                shutil.copy2(backup_path, target_file)
+            
+            logging.info(f"Restored from backup: {backup_file} to {target_file}")
+            return True
+            
+        except Exception as e:
+            logging.error(f"Failed to restore from backup: {str(e)}", exc_info=True)
+            return False
+
 def load_settings():
     """Load user settings from settings.json."""
     default_settings = {
         "theme": "dark",
-        "last_file": None
+        "last_file": None,
+        "backup": {
+            "max_backups": 5,
+            "backup_dir": "./backup",
+            "compression_enabled": False,
+            "min_backup_interval_minutes": 60
+        }
     }
     try:
         if os.path.exists('settings.json'):
             with open('settings.json', 'r') as f:
-                return json.load(f)
+                settings = json.load(f)
+                
+                # Ensure backup settings exist
+                if 'backup' not in settings:
+                    settings['backup'] = default_settings['backup']
+                    
+                return settings
         return default_settings
     except Exception as e:
         logging.error("Failed to load settings", exc_info=True)
@@ -408,6 +671,9 @@ class SupplementTracker:
             self.theme = ModernTheme(is_dark=None)  # Use saved theme preference
             self.style = self.theme.apply(self.root)
             
+            # Initialize backup manager
+            self.backup_manager = BackupManager(self.settings)
+            
             # Set up file association handling
             self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
             self.root.createcommand('::tk::mac::OpenDocument', self.open_file_from_system)
@@ -442,7 +708,12 @@ class SupplementTracker:
         """Handle window closing."""
         if self.supplements:
             if messagebox.askyesno("Save Changes", "Would you like to save changes before closing?"):
-                self.save_supplements()
+                # Save with user initiation flag
+                self.save_supplements(self.settings.get("last_file", "supplements.sup"), is_user_initiated=True)
+            else:
+                # Create a backup even if user chooses not to save
+                if self.settings.get("last_file"):
+                    self.backup_manager.create_backup(self.settings["last_file"], is_auto_save=False)
         self.root.destroy()
 
     def open_file_from_system(self, filename):
@@ -476,7 +747,9 @@ class SupplementTracker:
             ("Remove Selected", self.remove_selected),
             ("Cost Calculator", self.show_calculator),
             ("Save As...", self.save_as),
-            ("Load File", self.load_file)
+            ("Load File", self.load_file),
+            ("Backups", self.show_backups),
+            ("Settings", self.show_settings)
         ]
         
         for text, command in buttons:
@@ -553,10 +826,24 @@ class SupplementTracker:
             self.tree.heading(col, text=col, anchor='w')
             self.tree.column(col, width=width, minwidth=minwidth, anchor='w')
 
+        # Configure tag for items with auto-decrement disabled
+        self.tree.tag_configure('no_auto_decrement', foreground='#FF6B6B')
+
         self.tree.pack(fill='both', expand=True)
         
         # Bind right-click event to show context menu
         self.tree.bind("<Button-3>", self.show_context_menu)
+        
+        # Add legend for the asterisk indicator
+        legend_frame = ttk.Frame(main_frame)
+        legend_frame.pack(fill='x', pady=(5, 0))
+        legend_label = ttk.Label(
+            legend_frame, 
+            text="* Items with asterisk have auto-decrement disabled",
+            font=self.theme.fonts['small'],
+            foreground=self.theme.colors['text_secondary']
+        )
+        legend_label.pack(side='right', padx=5)
 
     def show_add_dialog(self):
         """Show the dialog for adding a new supplement."""
@@ -828,17 +1115,30 @@ class SupplementTracker:
                not any(search_term in tag.lower() for tag in supp.tags):
                 continue
                 
-            self.tree.insert('', 'end', iid=str(i), values=(
+            # Determine if we need to add an asterisk for non-auto-decrementing supplements
+            days_left_text = f"{supp.days_remaining():.1f}"
+            if not supp.auto_decrement:
+                days_left_text += "*"
+                
+            item_id = self.tree.insert('', 'end', iid=str(i), values=(
                 supp.name,
                 supp.current_count,
                 supp.initial_count,
                 f"${supp.cost:.2f}",
                 ", ".join(supp.tags),
                 supp.daily_dose,
-                f"{supp.days_remaining():.1f}"
+                days_left_text
             ))
+            
+            # Apply the tag for non-auto-decrementing supplements
+            if not supp.auto_decrement:
+                self.tree.item(item_id, tags=('no_auto_decrement',))
 
         self.update_days_until_empty()
+        
+        # Auto-save with backup if we have a last file
+        if self.supplements and self.settings.get("last_file"):
+            self.save_supplements(self.settings["last_file"], is_user_initiated=False)
 
     def update_days_until_empty(self):
         """Update the window title with the number of days until a supplement runs out."""
@@ -887,12 +1187,13 @@ class SupplementTracker:
         except Exception as e:
             handle_error(e, "Failed to load file")
 
-    def save_supplements(self, filename='supplements.sup'):
+    def save_supplements(self, filename='supplements.sup', is_user_initiated=True):
         """
         Save the current supplement data to a file.
         
         Args:
             filename (str): The path to the file to save the data to (default: 'supplements.sup').
+            is_user_initiated (bool): Whether the save was initiated by the user (default: True).
         """
         try:
             data = {
@@ -905,6 +1206,13 @@ class SupplementTracker:
             # Update last file in settings
             self.settings["last_file"] = filename
             save_settings(self.settings)
+            
+            # Create backup if needed
+            if not is_user_initiated:
+                backup_file = self.backup_manager.create_backup(filename, is_auto_save=True)
+                if backup_file:
+                    logging.info(f"Created automatic backup: {backup_file}")
+            
         except Exception as e:
             handle_error(e, f"Failed to save file: {filename}")
 
@@ -1100,10 +1408,414 @@ class SupplementTracker:
     def save_with_feedback(self):
         """Save supplements and provide feedback to the user."""
         filename = self.settings.get("last_file", "supplements.sup")
-        self.save_supplements(filename)
+        self.save_supplements(filename, is_user_initiated=True)
         # Show a brief message in the status bar or a small popup
         messagebox.showinfo("Saved", f"File saved to {filename}")
         return "break"  # Prevent the event from propagating
+
+    def show_backups(self):
+        """Show the backup management dialog."""
+        backups = self.backup_manager.list_backups()
+        
+        if not backups:
+            messagebox.showinfo("Backups", "No backups available.")
+            return
+            
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Backup Management")
+        dialog.geometry("700x500")
+        
+        # Apply theme to dialog
+        self.theme._apply_to_widget(dialog)
+        
+        # Make dialog modal
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Create main frame with padding
+        main_frame = ttk.Frame(dialog, padding="20")
+        main_frame.pack(fill='both', expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Backup Management", 
+            font=self.theme.fonts['heading']
+        ).pack(pady=(0, 20))
+        
+        # Create treeview for backups
+        tree_frame = ttk.Frame(main_frame)
+        tree_frame.pack(fill='both', expand=True)
+        
+        tree_scroll = ttk.Scrollbar(tree_frame, orient="vertical", style='Vertical.TScrollbar')
+        tree_scroll.pack(side='right', fill='y')
+        
+        backup_tree = ttk.Treeview(
+            tree_frame,
+            columns=('Filename', 'Date', 'Size', 'Type'),
+            yscrollcommand=tree_scroll.set,
+            style='Treeview'
+        )
+        
+        # Hide the first empty column
+        backup_tree['show'] = 'headings'
+        
+        # Configure scrollbar
+        tree_scroll.config(command=backup_tree.yview)
+        
+        # Configure column headings
+        backup_tree.heading('Filename', text='Filename')
+        backup_tree.heading('Date', text='Date')
+        backup_tree.heading('Size', text='Size')
+        backup_tree.heading('Type', text='Type')
+        
+        backup_tree.column('Filename', width=250)
+        backup_tree.column('Date', width=150)
+        backup_tree.column('Size', width=100)
+        backup_tree.column('Type', width=100)
+        
+        backup_tree.pack(fill='both', expand=True)
+        
+        # Populate treeview
+        for i, backup in enumerate(backups):
+            # Format date
+            try:
+                date_obj = datetime.fromisoformat(backup['timestamp'])
+                date_str = date_obj.strftime("%Y-%m-%d %H:%M:%S")
+            except:
+                date_str = backup['timestamp']
+                
+            # Format size
+            size_kb = backup['size'] / 1024
+            if size_kb < 1000:
+                size_str = f"{size_kb:.1f} KB"
+            else:
+                size_str = f"{size_kb/1024:.1f} MB"
+                
+            # Type
+            type_str = "Automatic" if backup.get('is_auto', True) else "Manual"
+            
+            backup_tree.insert('', 'end', iid=str(i), values=(
+                backup['filename'],
+                date_str,
+                size_str,
+                type_str
+            ))
+        
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=(20, 0))
+        
+        def restore_backup():
+            selected = backup_tree.selection()
+            if not selected:
+                messagebox.showinfo("Info", "Please select a backup to restore")
+                return
+                
+            index = int(selected[0])
+            if index < 0 or index >= len(backups):
+                return
+                
+            backup = backups[index]
+            
+            if messagebox.askyesno("Confirm Restore", 
+                                  f"Are you sure you want to restore from backup: {backup['filename']}?\n\n"
+                                  "This will replace your current data."):
+                
+                # Create a backup of current data before restoring
+                if self.settings.get("last_file"):
+                    self.backup_manager.create_backup(
+                        self.settings["last_file"], 
+                        is_auto_save=False
+                    )
+                
+                # Restore from backup
+                success = self.backup_manager.restore_from_backup(
+                    backup['filename'],
+                    self.settings.get("last_file", "supplements.sup")
+                )
+                
+                if success:
+                    messagebox.showinfo("Success", "Backup restored successfully")
+                    self.load_supplements(self.settings.get("last_file", "supplements.sup"))
+                    dialog.destroy()
+                else:
+                    messagebox.showerror("Error", "Failed to restore from backup")
+        
+        ttk.Button(
+            button_frame, 
+            text="Restore Selected", 
+            command=restore_backup
+        ).pack(side='left', padx=5)
+        
+        ttk.Button(
+            button_frame, 
+            text="Close", 
+            command=dialog.destroy
+        ).pack(side='left', padx=5)
+
+    def show_settings(self):
+        """Show the settings dialog."""
+        dialog = tk.Toplevel(self.root)
+        dialog.title("Settings")
+        dialog.geometry("550x450")
+        
+        # Apply theme to dialog
+        self.theme._apply_to_widget(dialog)
+        
+        # Make dialog modal
+        dialog.transient(self.root)
+        dialog.grab_set()
+        
+        # Create main frame with padding
+        main_frame = ttk.Frame(dialog, padding="20")
+        main_frame.pack(fill='both', expand=True)
+        
+        # Title
+        ttk.Label(
+            main_frame, 
+            text="Application Settings", 
+            font=self.theme.fonts['heading']
+        ).pack(pady=(0, 20))
+        
+        # Create notebook for different settings categories
+        notebook = ttk.Notebook(main_frame)
+        notebook.pack(fill='both', expand=True, pady=(0, 20))
+        
+        # Backup settings tab
+        backup_frame = ttk.Frame(notebook, padding=15)
+        notebook.add(backup_frame, text="Backup Settings")
+        
+        # Get current backup settings
+        backup_settings = self.settings.get('backup', {})
+        max_backups = backup_settings.get('max_backups', 5)
+        backup_dir = backup_settings.get('backup_dir', './backup')
+        compression_enabled = backup_settings.get('compression_enabled', False)
+        min_backup_interval = backup_settings.get('min_backup_interval_minutes', 60)
+        
+        # Create variables for settings
+        max_backups_var = tk.IntVar(value=max_backups)
+        backup_dir_var = tk.StringVar(value=backup_dir)
+        compression_var = tk.BooleanVar(value=compression_enabled)
+        interval_var = tk.IntVar(value=min_backup_interval)
+        
+        # Max backups setting
+        max_backups_frame = ttk.Frame(backup_frame)
+        max_backups_frame.pack(fill='x', pady=10)
+        
+        ttk.Label(
+            max_backups_frame, 
+            text="Maximum number of backups:", 
+            width=30, 
+            anchor='w'
+        ).pack(side='left')
+        
+        max_backups_spinbox = ttk.Spinbox(
+            max_backups_frame,
+            from_=1,
+            to=20,
+            textvariable=max_backups_var,
+            width=5
+        )
+        max_backups_spinbox.pack(side='left', padx=(10, 0))
+        
+        # Backup directory setting
+        backup_dir_frame = ttk.Frame(backup_frame)
+        backup_dir_frame.pack(fill='x', pady=10)
+        
+        ttk.Label(
+            backup_dir_frame, 
+            text="Backup directory:", 
+            width=30, 
+            anchor='w'
+        ).pack(side='left')
+        
+        backup_dir_entry = ttk.Entry(
+            backup_dir_frame,
+            textvariable=backup_dir_var,
+            width=25
+        )
+        backup_dir_entry.pack(side='left', padx=(10, 5), fill='x', expand=True)
+        
+        def browse_backup_dir():
+            directory = filedialog.askdirectory(
+                initialdir=backup_dir_var.get(),
+                title="Select Backup Directory"
+            )
+            if directory:
+                backup_dir_var.set(directory)
+        
+        browse_button = ttk.Button(
+            backup_dir_frame,
+            text="Browse...",
+            command=browse_backup_dir
+        )
+        browse_button.pack(side='left')
+        
+        # Compression setting
+        compression_frame = ttk.Frame(backup_frame)
+        compression_frame.pack(fill='x', pady=10)
+        
+        compression_check = ttk.Checkbutton(
+            compression_frame,
+            text="Enable backup compression (saves disk space)",
+            variable=compression_var
+        )
+        compression_check.pack(side='left')
+        
+        # Backup interval setting
+        interval_frame = ttk.Frame(backup_frame)
+        interval_frame.pack(fill='x', pady=10)
+        
+        ttk.Label(
+            interval_frame, 
+            text="Minimum time between auto-backups:", 
+            width=30, 
+            anchor='w'
+        ).pack(side='left')
+        
+        interval_spinbox = ttk.Spinbox(
+            interval_frame,
+            from_=5,
+            to=1440,  # 24 hours in minutes
+            textvariable=interval_var,
+            width=5
+        )
+        interval_spinbox.pack(side='left', padx=(10, 5))
+        
+        ttk.Label(
+            interval_frame, 
+            text="minutes"
+        ).pack(side='left')
+        
+        # Information section
+        info_frame = ttk.Frame(backup_frame)
+        info_frame.pack(fill='x', pady=(20, 10))
+        
+        info_text = (
+            "Backups are created automatically when saving supplements.\n"
+            "You can view and restore backups using the 'Backups' button."
+        )
+        
+        ttk.Label(
+            info_frame,
+            text=info_text,
+            foreground=self.theme.colors['text_secondary'],
+            justify='left',
+            wraplength=500
+        ).pack(fill='x')
+        
+        # Current backup stats
+        stats_frame = ttk.Frame(backup_frame)
+        stats_frame.pack(fill='x', pady=10)
+        
+        # Count existing backups
+        backups = self.backup_manager.list_backups()
+        backup_count = len(backups)
+        
+        # Calculate total size
+        total_size = sum(backup.get('size', 0) for backup in backups)
+        if total_size < 1024:
+            size_str = f"{total_size} bytes"
+        elif total_size < 1024 * 1024:
+            size_str = f"{total_size/1024:.1f} KB"
+        else:
+            size_str = f"{total_size/(1024*1024):.1f} MB"
+        
+        stats_text = f"Current backups: {backup_count}   Total size: {size_str}"
+        
+        stats_label = ttk.Label(
+            stats_frame,
+            text=stats_text,
+            foreground=self.theme.colors['text_secondary']
+        )
+        stats_label.pack(side='left')
+        
+        # Button to clear all backups
+        def clear_all_backups():
+            if messagebox.askyesno(
+                "Confirm", 
+                "Are you sure you want to delete all backups?\nThis action cannot be undone."
+            ):
+                # Remove all backups from the index
+                for backup in self.backup_manager.list_backups():
+                    try:
+                        backup_path = os.path.join(
+                            self.backup_manager.backup_settings['backup_dir'], 
+                            backup['filename']
+                        )
+                        if os.path.exists(backup_path):
+                            os.remove(backup_path)
+                    except Exception as e:
+                        logging.error(f"Failed to remove backup: {str(e)}", exc_info=True)
+                
+                # Clear the backup index
+                self.backup_manager.backup_index['backups'] = []
+                self.backup_manager._save_backup_index()
+                
+                # Update stats
+                stats_text = "Current backups: 0   Total size: 0 bytes"
+                stats_label.configure(text=stats_text)
+                
+                messagebox.showinfo("Success", "All backups have been deleted.")
+        
+        clear_button = ttk.Button(
+            stats_frame,
+            text="Clear All Backups",
+            command=clear_all_backups
+        )
+        clear_button.pack(side='right')
+        
+        # Add more settings tabs here if needed
+        # For example: general_frame = ttk.Frame(notebook, padding=15)
+        # notebook.add(general_frame, text="General Settings")
+        
+        # Button frame
+        button_frame = ttk.Frame(main_frame)
+        button_frame.pack(pady=(10, 0))
+        
+        def save_settings():
+            try:
+                # Update backup settings
+                self.settings['backup'] = {
+                    'max_backups': max_backups_var.get(),
+                    'backup_dir': backup_dir_var.get(),
+                    'compression_enabled': compression_var.get(),
+                    'min_backup_interval_minutes': interval_var.get()
+                }
+                
+                # Save settings to file
+                save_settings(self.settings)
+                
+                # Update backup manager with new settings
+                self.backup_manager.backup_settings = self.settings['backup']
+                
+                # Ensure backup directory exists with new path
+                self.backup_manager.ensure_backup_directory()
+                
+                # Update backup index file path
+                self.backup_manager.backup_index_file = os.path.join(
+                    self.backup_manager.backup_settings['backup_dir'], 
+                    'backup_index.json'
+                )
+                
+                messagebox.showinfo("Success", "Settings saved successfully.")
+                dialog.destroy()
+                
+            except Exception as e:
+                handle_error(e, "Failed to save settings")
+        
+        ttk.Button(
+            button_frame, 
+            text="Save", 
+            command=save_settings
+        ).pack(side='left', padx=5)
+        
+        ttk.Button(
+            button_frame, 
+            text="Cancel", 
+            command=dialog.destroy
+        ).pack(side='left', padx=5)
 
     def run(self):
         """Run the main event loop of the application."""
